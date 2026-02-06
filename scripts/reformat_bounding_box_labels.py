@@ -56,32 +56,26 @@ def process_sequence(seq_path):
         # Filter out empty lines just in case
         lines = [line.strip() for line in f.readlines() if line.strip()]
 
-    # We iterate with a step of 3 to match the 10 vs 30 frame difference
-    # rgb.txt index 0 = Frame 0
-    # rgb.txt index 3 = Frame 30
-    # rgb.txt index 6 = Frame 60
+    # rgb.txt has bounding boxes for every 10th frame, I took every 30th frame
+    # so use every 3rd line
     for line_idx in range(0, len(lines), 3):
         
-        # 1. Identify the specific frame number and filename
         frame_num = line_idx * 10
-        # Format: e.g. "000030"
-        file_id = f"{frame_num:06d}" 
+        file_id = f"{frame_num:06d}" #  e.g. "000030"
         
         image_filename = f"{file_id}.jpg"
         image_path = os.path.join(fused_img_dir, image_filename)
 
-        # 2. Verify Image Exists (Critical for normalization)
         if not os.path.exists(image_path):
-            continue
+            continue # image doesn't exist, skip
 
-        # 3. Load Image to get Dimensions
         img = cv2.imread(image_path)
         if img is None:
-            continue
+            continue # get dimensions, skip if failed
         
         img_h, img_w = img.shape[:2]
 
-        # 4. Parse the Original Box (x_min, y_min, w, h)
+        # get bounding box coordinates [x_min, y_min, width, height]
         try:
             raw_coords = lines[line_idx].split()
             x_min = float(raw_coords[0])
@@ -105,8 +99,7 @@ def process_sequence(seq_path):
         w_norm = max(0.0, min(1.0, w_norm))
         h_norm = max(0.0, min(1.0, h_norm))
 
-        # 7. Write the individual label file
-        # Filename: 000030.txt (Must match image name exactly, except extension)
+        # write to new label file and rename fused image to match
         final_name = f"{folder_name}_{file_id}"
         label_filename = f"{final_name}.txt"
         label_path = os.path.join(labels_dir, label_filename)
