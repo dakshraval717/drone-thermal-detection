@@ -1,0 +1,82 @@
+# In terminal, run:
+    # cd /content/drive/MyDrive/Colab_Notebooks/drone-thermal-detection/drone-thermal-detection
+import zipfile
+import os
+import yaml
+
+# ! bash command, don't forget!
+zip_path = "/content/drive/MyDrive/Colab_Notebooks/drone-thermal-dataset.zip" # takes from drive
+extract_path = "/content/local_dataset" # saves 'locally' on server so doesn't interface with Google Drive, save
+
+print(f"Extracting {zip_path} to {extract_path}...")
+with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+    zip_ref.extractall(extract_path)
+print("Extraction complete!")
+
+# chat said it fixes YAML sourcing, it does, no more questions
+yaml_file = f"{extract_path}/drone-thermal-dataset/data.yaml"
+
+with open(yaml_file, 'r') as f:
+    config = yaml.safe_load(f)
+
+# Force paths to be correct for this session
+config['path'] = f"{extract_path}/drone-thermal-dataset"
+config['train'] = "train/images"
+config['val'] = "val/images"
+
+with open(yaml_file, 'w') as f:
+    yaml.dump(config, f)
+
+print("YAML file paths patched successfully!")
+
+
+from ultralytics import YOLO
+
+model = YOLO('yolo11n.pt') # yolo11 Nano
+
+# epoch checkpoint callback
+def on_train_epoch_end(trainer):
+    current_epoch = trainer.epoch + 1
+    total_epochs = trainer.epochs
+    print(f"\n Epoch {current_epoch}/{total_epochs} Complete. Checkpoint 'last.pt' saved to Drive.")
+
+# Register the callback
+model.add_callback("on_train_epoch_end", on_train_epoch_end)
+
+# train
+results = model.train(
+    data=f"{extract_path}/drone-thermal-dataset/data.yaml", # config file with classes
+    task='detect',
+
+    epochs=100,
+    imgsz=960,       # quarter resolution, multiple of 32, big enough hopefully
+    batch=6,         # prevent out of memory cause large resolution
+    patience=20,     # check if diminishing returns every 20 epochs
+    device=0,        # Use GPU 0
+    workers=4,        # chat said it parallelizes faster, no questions
+
+    project='/content/drive/MyDrive/Colab_Notebooks/Drone_Thermal_Run', # checkpoint to Google Drive
+    name='yolo11n_960px_v14',
+
+    # --- Thermal-Specific Augmentations (The "Secret Sauce") ---
+    hsv_h=0.0,       # blue for heat messes with hue
+    hsv_s=0.8,       # saturation turns more blue, making heat signature color gradient steeper, easier to track
+    hsv_v=0.4,       # standard brightness
+
+    # --- Geometry Augmentations ---
+    fliplr=0.5,      # left/right flip fine
+    flipud=0,        # I'd assume this would help it be vertical agnostic, but ig not
+    degrees=10.0,    # allows for rotation due to drone acceleration
+
+    # simulates distortion of viewing flat ground at 45 degree angle,
+    perspective=0.0005, # helps with 'far vs near' object shape changes
+
+    # helps simulate altitude changes
+    scale=0.5,  # scale/zoom in/out to simulate altitude cahnge
+
+    # --- Plotting ---
+    plots=True       # Automatically generate loss curves
+)
+
+print("Training Complete!")
+
